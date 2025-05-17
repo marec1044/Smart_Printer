@@ -29,11 +29,11 @@ let selectedColor = { value: "bw", label: "Black & White" };
 let selectedLayout = { value: "portrait", label: "Portrait" };
 let selectedSides = { value: "one-sided", label: "One-sided" };
 let selectedPagesOption = { value: "all", label: "All" };
-let customPagesValue = "";
 let numberOfCopies = 1;
 let uploadedFiles = []; // Will store { id: string, file: File, pageCount: number, options: Object } objects
 let totalPageCount = 0;
 let currentJobId = null; // Added for DB tracking
+let totalCost = 0; // Variable to store the calculated cost
 
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", () => {
@@ -82,6 +82,7 @@ function setupEventListeners() {
                 label: event.target.closest(".radio-button").querySelector(".radio-label-text").textContent
             };
             updateSummary();
+            updateCostDisplay();
         }
     });
 
@@ -104,6 +105,7 @@ function setupEventListeners() {
                 label: event.target.closest(".radio-button").querySelector(".radio-label-text").textContent
             };
             updateSummary();
+            updateCostDisplay();
         }
     });
 
@@ -121,7 +123,6 @@ function setupEventListeners() {
                 customPageRangeInput.focus();
             } else {
                 customPageRangeInput.disabled = true;
-                customPagesValue = ""; // Clear custom value if another option is selected
                 customPageRangeInput.value = "";
             }
             updateSummary();
@@ -131,7 +132,6 @@ function setupEventListeners() {
     // Custom Page Range Input
     customPageRangeInput.addEventListener("input", (event) => {
         if (!event.target.disabled) {
-            customPagesValue = event.target.value.trim();
             updateSummary();
         }
     });
@@ -143,6 +143,7 @@ function setupEventListeners() {
             numberOfCopies--;
             copiesInput.value = numberOfCopies;
             updateSummary();
+            updateCostDisplay();
         }
     });
 
@@ -152,6 +153,7 @@ function setupEventListeners() {
             numberOfCopies++;
             copiesInput.value = numberOfCopies;
             updateSummary();
+            updateCostDisplay();
         }
     });
 
@@ -168,6 +170,7 @@ function setupEventListeners() {
         numberOfCopies = value;
         copiesInput.value = numberOfCopies; // Ensure input reflects validated value
         updateSummary();
+        updateCostDisplay();
     });
 
     // File Upload Logic
@@ -198,9 +201,12 @@ function setupEventListeners() {
     // Print Button Logic
     printBtn.addEventListener("click", () => {
         if (uploadedFiles.length === 0) {
-            alert("Please upload at least one file before submitting.");
+            alert("الرجاء رفع ملف واحد على الأقل قبل الإرسال.");
             return;
         }
+
+        // Calculate cost before showing modal
+        calculateCost();
 
         // Show print confirmation modal
         const modal = document.getElementById('printConfirmModal');
@@ -224,7 +230,7 @@ function setupEventListeners() {
             document.getElementById('printConfirmModal').style.display = 'none';
             
             // Send print jobs to the server
-            submitPrintJob();
+            processPrintJob();
         });
     }
 }
@@ -236,15 +242,15 @@ function updateSummary() {
     if (summarySides) summarySides.textContent = selectedSides.label;
     
     let pagesSummaryText = selectedPagesOption.label;
-    if (selectedPagesOption.value === 'custom' && customPagesValue) {
-        pagesSummaryText = `Custom: ${customPagesValue}`;
-    } else if (selectedPagesOption.value === 'custom' && !customPagesValue) {
-        pagesSummaryText = "Custom (Specify range)"; // Prompt user
+    if (selectedPagesOption.value === 'custom' && customPageRangeInput.value) {
+        pagesSummaryText = `مخصص: ${customPageRangeInput.value}`;
+    } else if (selectedPagesOption.value === 'custom' && !customPageRangeInput.value) {
+        pagesSummaryText = "مخصص (حدد النطاق)"; // Prompt user
     }
     if (summaryPages) summaryPages.textContent = pagesSummaryText;
     
     if (summaryCopies) summaryCopies.textContent = numberOfCopies;
-    if (summaryFiles) summaryFiles.textContent = `${uploadedFiles.length} ${uploadedFiles.length === 1 ? "file" : "files"}`;
+    if (summaryFiles) summaryFiles.textContent = `${uploadedFiles.length} ${uploadedFiles.length === 1 ? "File" : "Files"}`;
     if (summaryPageCount) summaryPageCount.textContent = totalPageCount * numberOfCopies;
 
     // Enable/disable print button based on file upload
@@ -265,15 +271,15 @@ function handleFiles(files) {
         // Validation
         const extension = file.name.split(".").pop().toLowerCase();
         if (!ALLOWED_EXTENSIONS.includes(extension)) {
-            alert(`Unsupported file type: ${file.name}. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}`);
+            alert(`نوع ملف غير مدعوم: ${file.name}. الأنواع المسموح بها: ${ALLOWED_EXTENSIONS.join(", ")}`);
             continue;
         }
         if (file.size > MAX_FILE_SIZE) {
-            alert(`File size too large: ${file.name}. Max: ${formatFileSize(MAX_FILE_SIZE)}`);
+            alert(`حجم الملف كبير جدًا: ${file.name}. الحد الأقصى: ${formatFileSize(MAX_FILE_SIZE)}`);
             continue;
         }
         if (uploadedFiles.some(f => f.file.name === file.name)) {
-             alert(`File ${file.name} is already uploaded.`);
+             alert(`الملف ${file.name} تم رفعه بالفعل.`);
              continue;
         }
 
@@ -320,6 +326,7 @@ function uploadFile(file) {
     
     // AJAX request to upload file to server
     const xhr = new XMLHttpRequest();
+    // تعديل المسار ليتناسب مع هيكل موقعك - هذا هو أحد المشاكل المحتملة
     xhr.open('POST', '../BackEnd/PHP-pages/upload.php', true);
     
     xhr.upload.addEventListener('progress', ({loaded, total}) => {
@@ -345,12 +352,12 @@ function uploadFile(file) {
                     });
                 } else {
                     // Handle upload failure
-                    alert(response.message || 'Upload failed. Please try again.');
+                    alert(response.message || 'فشل الرفع. الرجاء المحاولة مرة أخرى.');
                     if (progressRow) progressRow.remove();
                 }
             } catch (e) {
                 console.error('Error parsing server response:', e);
-                alert('Something went wrong. Please try again.');
+                alert('حدث خطأ ما. الرجاء المحاولة مرة أخرى.');
                 if (progressRow) progressRow.remove();
             }
         }
@@ -382,6 +389,7 @@ function removeFile(fileId, fileName, isUploading = false) {
         // If the file was successfully uploaded to server, send delete request
         if (removedFile.path && removedFile.serverName) {
             // Send request to server to delete the file
+            // تعديل المسار ليتناسب مع هيكل موقعك
             fetch('../BackEnd/PHP-pages/delete_file.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -409,89 +417,100 @@ function removeFile(fileId, fileName, isUploading = false) {
             uploadedArea.style.display = "none";
         }
     }
+    
+    // Update cost display after file removal
+    updateCostDisplay();
 }
 
-// Function to submit print job
-function submitPrintJob() {
-    if (uploadedFiles.length === 0) {
-        alert('Please upload at least one file before submitting.');
-        return;
-    }
+// Function to calculate cost via AJAX
+function calculateCost() {
+    if (uploadedFiles.length === 0) return;
     
-    // Use the most recent file's data (can be adapted for multiple files if needed)
+    // Get the most recent file's data
     const file = uploadedFiles[0];
     
-    // Prepare job data
-    const jobData = {
-        file_name: file.file.name,
-        file_path: file.path || '',
-        num_pages: file.pageCount,
-        num_copies: numberOfCopies,
-        color_mode: selectedColor.value,
-        print_sides: selectedSides.value,
-        orientation: selectedLayout.value,
-        page_range: selectedPagesOption.value === 'custom' ? customPagesValue : selectedPagesOption.value
-    };
+    // Prepare data for cost calculation
+    const data = new FormData();
+    data.append('action', 'calculate_cost');
+    data.append('color', selectedColor.value);
+    data.append('sides', selectedSides.value);
+    data.append('page_count', file.pageCount);
+    data.append('copies', numberOfCopies);
     
-    // AJAX request to create print job
+    // AJAX request to calculate cost
+    // تعديل المسار ليتناسب مع هيكل موقعك
     fetch('../BackEnd/PHP-pages/upload.php', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(jobData)
+        body: data
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Store job ID for confirmation
-            currentJobId = data.job_id;
-            
-            // Confirm job immediately
-            confirmPrintJob(currentJobId);
+            totalCost = data.cost;
+            // Update cost in the modal
+            const costElement = document.getElementById('cost');
+            if (costElement) {
+                costElement.textContent = totalCost.toFixed(2);
+            }
         } else {
-            alert(data.message || 'Failed to create print job. Please try again.');
-            const printConfirmModal = document.getElementById('printConfirmModal');
-            if (printConfirmModal) printConfirmModal.style.display = 'none';
+            console.error('Error calculating cost:', data.message);
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Something went wrong. Please try again.');
-        const printConfirmModal = document.getElementById('printConfirmModal');
-        if (printConfirmModal) printConfirmModal.style.display = 'none';
     });
 }
 
-// Function to confirm print job
-function confirmPrintJob(jobId) {
+// Update cost when copies change or file is uploaded
+function updateCostDisplay() {
+    if (uploadedFiles.length > 0) {
+        calculateCost();
+    }
+}
+
+// Function to process print job with payment
+function processPrintJob() {
+    if (uploadedFiles.length === 0) {
+        alert('الرجاء رفع ملف واحد على الأقل قبل الإرسال.');
+        return;
+    }
+    
+    // Use the most recent file's data
+    const file = uploadedFiles[0];
+    
+    // Prepare job data including temp file path
+    const formData = new FormData();
+    formData.append('action', 'process_print');
+    formData.append('temp_file_path', file.path || '');
+    formData.append('original_file_name', file.file.name);
+    formData.append('page_count', file.pageCount);
+    formData.append('copies', numberOfCopies);
+    formData.append('color', selectedColor.value);
+    formData.append('sides', selectedSides.value);
+    formData.append('layout', selectedLayout.value);
+    formData.append('pages', selectedPagesOption.value);
+    formData.append('page_range', selectedPagesOption.value === 'custom' ? customPageRangeInput.value : '');
+    
+    // AJAX request to process print job with payment
+    // تعديل المسار ليتناسب مع هيكل موقعك
     fetch('../BackEnd/PHP-pages/upload.php', {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            job_id: jobId
-        })
+        method: 'POST',
+        body: formData
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            alert('Print job confirmed successfully!');
+            alert(`تم تقديم مهمة الطباعة بنجاح!\nالتكلفة: ${data.cost} AITP\nالرصيد المتبقي: ${data.remaining_balance} AITP`);
             
-            // Reset form
+            // Reset form after successful submission
             resetForm();
         } else {
-            alert(data.message || 'Failed to confirm print job. Please try again.');
+            alert(data.message || 'فشل في معالجة مهمة الطباعة. الرجاء المحاولة مرة أخرى.');
         }
-        const printConfirmModal = document.getElementById('printConfirmModal');
-        if (printConfirmModal) printConfirmModal.style.display = 'none';
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('Something went wrong. Please try again.');
-        const printConfirmModal = document.getElementById('printConfirmModal');
-        if (printConfirmModal) printConfirmModal.style.display = 'none';
+        alert('حدث خطأ ما. الرجاء المحاولة مرة أخرى.');
     });
 }
 
@@ -521,12 +540,15 @@ function completedFileUpload(file, fileId, pageCount, serverResponse = null) {
                     color: selectedColor.value,
                     layout: selectedLayout.value,
                     sides: selectedSides.value,
-                    pages: selectedPagesOption.value === 'custom' ? customPagesValue : selectedPagesOption.value,
+                    pages: selectedPagesOption.value === 'custom' ? customPageRangeInput.value : selectedPagesOption.value,
                     copies: numberOfCopies
                 }
             };
             
             addFileToUploadedList(fileData);
+            
+            // Calculate cost when file is uploaded
+            updateCostDisplay();
         }
         if (progressArea.children.length === 0) {
             progressArea.style.display = "none";
@@ -547,7 +569,7 @@ function addFileToUploadedList(fileData) {
             <div class="content">
                 <div class="details">
                     <span class="name">${fileData.file.name}</span>
-                    <span class="size">${formatFileSize(fileData.file.size)} - ${fileData.pageCount} pages</span>
+                    <span class="size">${formatFileSize(fileData.file.size)} - ${fileData.pageCount} Pages</span>
                 </div>
             </div>
             <button class="remove-file-btn" data-fileid="${fileData.id}" aria-label="Remove file">&times;</button>
@@ -577,6 +599,7 @@ function countPDFPages(file) {
         formData.append("pdf_file", file);
         
         // Try to use the server-side page counter if available
+        // تعديل المسار ليتناسب مع هيكل موقعك
         fetch("../BackEnd/PHP-pages/calculate/count_pages.php", {
             method: "POST",
             body: formData
@@ -621,6 +644,12 @@ function resetForm() {
     // Clear any displayed files
     if (uploadedArea) {
         uploadedArea.innerHTML = '';
+        uploadedArea.style.display = 'none';
+    }
+    
+    if (progressArea) {
+        progressArea.innerHTML = '';
+        progressArea.style.display = 'none';
     }
     
     // Reset options to defaults
@@ -628,7 +657,6 @@ function resetForm() {
     selectedLayout = { value: "portrait", label: "Portrait" };
     selectedSides = { value: "one-sided", label: "One-sided" };
     selectedPagesOption = { value: "all", label: "All" };
-    customPagesValue = "";
     numberOfCopies = 1;
     
     // Update UI
