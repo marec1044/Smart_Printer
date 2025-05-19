@@ -20,6 +20,79 @@ if (!$user_id) {
     exit;
 }
 
+// دالة للحصول على إعدادات الأسعار
+function getPriceSettings($dbname) {
+    try {
+        $stmt = $dbname->query("SELECT * FROM price_settings ORDER BY id DESC LIMIT 1");
+        $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // إذا لم تكن هناك إعدادات، قم بإنشاء إعدادات افتراضية
+        if (!$settings) {
+            $dbname->exec("INSERT INTO price_settings (bw_single, color_single, bw_double, color_double, student_discount, professor_discount, staff_discount, bulk_discount) 
+                VALUES (0.50, 1.50, 0.80, 2.50, 10, 15, 5, 20)");
+            
+            $stmt = $dbname->query("SELECT * FROM price_settings ORDER BY id DESC LIMIT 1");
+            $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+        }
+        
+        return $settings;
+    } catch (PDOException $e) {
+        // إذا كان الجدول غير موجود، قم بإنشائه
+        $sql = "CREATE TABLE IF NOT EXISTS price_settings (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            bw_single DECIMAL(10, 2) NOT NULL DEFAULT 0.50,
+            color_single DECIMAL(10, 2) NOT NULL DEFAULT 1.50,
+            bw_double DECIMAL(10, 2) NOT NULL DEFAULT 0.80,
+            color_double DECIMAL(10, 2) NOT NULL DEFAULT 2.50,
+            student_discount INT NOT NULL DEFAULT 10,
+            professor_discount INT NOT NULL DEFAULT 15,
+            staff_discount INT NOT NULL DEFAULT 5,
+            bulk_discount INT NOT NULL DEFAULT 20,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )";
+        
+        $dbname->exec($sql);
+        $dbname->exec("INSERT INTO price_settings (bw_single, color_single, bw_double, color_double, student_discount, professor_discount, staff_discount, bulk_discount) 
+            VALUES (0.50, 1.50, 0.80, 2.50, 10, 15, 5, 20)");
+        
+        $stmt = $dbname->query("SELECT * FROM price_settings ORDER BY id DESC LIMIT 1");
+        $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        return $settings;
+    }
+}
+
+// دالة للحصول على نوع المستخدم والخصم المطبق
+function getUserTypeAndDiscount($dbname, $user_id) {
+    $stmt = $dbname->prepare("SELECT user_type FROM users WHERE id = :user_id");
+    $stmt->bindParam(':user_id', $user_id);
+    $stmt->execute();
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    $settings = getPriceSettings($dbname);
+    
+    $userType = $user['user_type'] ?? 'regular';
+    $discount = 0;
+    
+    switch ($userType) {
+        case 'student':
+            $discount = $settings['student_discount'];
+            break;
+        case 'professor':
+            $discount = $settings['professor_discount'];
+            break;
+        case 'staff':
+            $discount = $settings['staff_discount'];
+            break;
+        default:
+            $discount = 0;
+            break;
+    }
+    
+    return ['user_type' => $userType, 'discount' => $discount];
+}
+
 // دالة لتنظيف اسم الملف
 function sanitizeFileName($fileName) {
     // إزالة الأحرف التي قد تكون خطرة
@@ -28,25 +101,44 @@ function sanitizeFileName($fileName) {
 }
 
 // دالة لحساب تكلفة الطباعة
-function calculateCost($numPages, $numCopies, $colorMode, $printSides)
+function calculateCost($numPages, $numCopies, $colorMode, $printSides, $dbname, $user_id)
 {
+    // الحصول على إعدادات الأسعار من قاعدة البيانات
+    $settings = getPriceSettings($dbname);
+    
+    // تحديد سعر الصفحة بناءً على إعدادات اللون والطباعة
     if ($colorMode == 'color') {
         if ($printSides == 'two-sided') {
-            $pagePrice = 4;
+            $pagePrice = $settings['color_double'];
         } else {
-            $pagePrice = 3;
+            $pagePrice = $settings['color_single'];
         }
     } else {
         if ($printSides == 'two-sided') {
-            $pagePrice = 3;
+            $pagePrice = $settings['bw_double'];
         } else {
-            $pagePrice = 2;
+            $pagePrice = $settings['bw_single'];
         }
     }
 
+    // الحصول على معلومات المستخدم والخصم
+    $userInfo = getUserTypeAndDiscount($dbname, $user_id);
+    $userDiscount = $userInfo['discount']; // نسبة الخصم بناءً على نوع المستخدم
+    
     // حساب التكلفة الإجمالية
     $totalCost = $numPages * $numCopies * $pagePrice;
-
+    
+    // تطبيق خصم كمية إذا كان عدد النسخ كبيرًا (أكثر من 50 مثلاً)
+    if ($numCopies > 50) {
+        $bulkDiscount = $settings['bulk_discount']; // خصم الكمية
+        $totalCost = $totalCost - ($totalCost * $bulkDiscount / 100);
+    }
+    
+    // تطبيق خصم المستخدم
+    if ($userDiscount > 0) {
+        $totalCost = $totalCost - ($totalCost * $userDiscount / 100);
+    }
+    
     return $totalCost;
 }
 
@@ -57,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $numPages = intval($_POST['page_count'] ?? 1);
     $numCopies = intval($_POST['copies'] ?? 1);
     
-    $cost = calculateCost($numPages, $numCopies, $colorMode, $printSides);
+    $cost = calculateCost($numPages, $numCopies, $colorMode, $printSides, $dbname, $user_id);
     
     header('Content-Type: application/json');
     echo json_encode(['success' => true, 'cost' => $cost]);
@@ -84,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
     
     // حساب التكلفة
-    $cost = calculateCost($numPages, $numCopies, $colorMode, $printSides);
+    $cost = calculateCost($numPages, $numCopies, $colorMode, $printSides, $dbname, $user_id);
     
     // التحقق من رصيد المستخدم
     $stmt = $dbname->prepare("SELECT balance FROM users WHERE id = :user_id");
@@ -280,8 +372,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $orientation = $data['orientation'];
                 $page_range = isset($data['page_range']) ? $data['page_range'] : 'all';
                 
-                // حساب التكلفة
-                $cost = calculateCost($num_pages, $num_copies, $color_mode, $print_sides);
+                // حساب التكلفة باستخدام الأسعار من قاعدة البيانات
+                $cost = calculateCost($num_pages, $num_copies, $color_mode, $print_sides, $dbname, $user_id);
                 
                 // إدخال مهمة الطباعة في قاعدة البيانات
                 $stmt = $dbname->prepare("INSERT INTO print_jobs (user_id, file_name, file_path, num_pages, num_copies, 
@@ -355,6 +447,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['job_id'])) {
     } else {
         echo json_encode(['success' => false, 'message' => 'مهمة الطباعة غير موجودة']);
     }
+}
+
+// جلب إعدادات الأسعار الحالية (مفيد للواجهة الأمامية)
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['get_price_settings'])) {
+    $settings = getPriceSettings($dbname);
+    $userInfo = getUserTypeAndDiscount($dbname, $user_id);
+    
+    echo json_encode([
+        'success' => true, 
+        'settings' => $settings, 
+        'user_info' => $userInfo
+    ]);
+    exit;
 }
 
 // في أي حالة أخرى، إعادة خطأ

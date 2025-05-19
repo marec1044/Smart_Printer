@@ -7,6 +7,12 @@ requireLogin();
 
 // Include user data
 require_once '../BackEnd/PHP-pages/register.php';
+
+// قائمة المستخدمين المسموح لهم بالوصول إلى لوحة التحكم
+$allowedAdminUsers = [2320603, 2320598, 2320241];
+
+// التحقق مما إذا كان المستخدم الحالي لديه صلاحيات الإدارة
+$isAdmin = isset($_SESSION['user_id']) && in_array($_SESSION['user_id'], $allowedAdminUsers);
 ?>
 <!DOCTYPE html>  
 <html lang="en">  
@@ -18,6 +24,20 @@ require_once '../BackEnd/PHP-pages/register.php';
           integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" 
           crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="user.css">
+    <style>
+        .btn-admin {
+            background-color: #d4af37;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        .btn-admin:hover {
+            background-color: #c19d2c;
+        }
+    </style>
 </head>  
 <body>  
     <!-- Navigation Bar -->
@@ -38,6 +58,11 @@ require_once '../BackEnd/PHP-pages/register.php';
             <a class="btn btn-print" href="../Home_page/Options_page.php">
                 <i class="fa-solid fa-print"></i> Print Now
             </a>
+            <?php if($isAdmin): ?>
+            <a class="btn btn-admin" href="../BackEnd/Admin/index.php">
+                <i class="fas fa-user-shield"></i> Admin Panel
+            </a>
+            <?php endif; ?>
             <a class="btn btn-logout" href="../BackEnd/PHP-pages/logout.php">
                 <i class="fas fa-sign-out-alt"></i> Log out
             </a>
@@ -65,6 +90,9 @@ require_once '../BackEnd/PHP-pages/register.php';
             <a href="../Home_page/home_page.php#how-it-works">How It Works</a>
             <a href="../Home_page/Options_page.php">Print Now</a>
             <a href="../Home_page/home_page.php#contact_us">Contact Us</a>
+            <?php if($isAdmin): ?>
+            <a href="../admin/index.php"><i class="fas fa-user-shield"></i> Admin Panel</a>
+            <?php endif; ?>
         </div>
 
         <div class="sidebar-footer">
@@ -110,6 +138,14 @@ require_once '../BackEnd/PHP-pages/register.php';
                 <label class="field-label">ID</label>  
                 <div class="field-value"><?php echo $users['id'] ?? $_SESSION['user_id']; ?></div>  
             </div>  
+            
+            <?php if($isAdmin): ?>
+            <div class="field-container">
+                <a class="btn btn-admin" href="../admin/index.php">
+                    <i class="fas fa-user-shield"></i> Access Admin Dashboard
+                </a>
+            </div>
+            <?php endif; ?>
         </div>  
 
         <div class="balance-section">  
