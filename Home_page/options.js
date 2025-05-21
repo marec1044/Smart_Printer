@@ -389,7 +389,7 @@ function removeFile(fileId, fileName, isUploading = false) {
         // If the file was successfully uploaded to server, send delete request
         if (removedFile.path && removedFile.serverName) {
             // Send request to server to delete the file
-            // تعديل المسار ليتناسب مع هيكل موقعك
+           
             fetch('../BackEnd/PHP-pages/delete_file.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

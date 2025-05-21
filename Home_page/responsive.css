@@ -1,0 +1,49 @@
+
+/* ===== Media Queries ===== */
+@media (max-width: 992px) {
+    .nav-links {
+        gap: 1rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .navbar {
+        padding: 0.8rem 1rem;
+    }
+    
+    .nav-links {
+        display: none;
+    }
+    
+    .menu-toggle {
+        display: flex;
+    }
+    
+    .right-section {
+        gap: 0.5rem;
+    }
+    
+    .btn-admin, .btn-logout {
+        display: none;
+    }
+    
+    .btn-print {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.9rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .logo span {
+        display: none;
+    }
+    
+    .navbar {
+        padding: 0.6rem 0.8rem;
+    }
+    
+    .btn-print {
+        font-size: 0.8rem;
+        padding: 0.3rem 0.6rem;
+    }
+}

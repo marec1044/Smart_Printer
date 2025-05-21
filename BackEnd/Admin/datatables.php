@@ -65,7 +65,7 @@ $result = $conn->query($sql);
   <title>AITP Dashboard | Users</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <meta content="width=device-width, initial-scale=1.0, shrink-to-fit=no" name="viewport" />
-  <link rel="icon" href="assets/img/kaiadmin/favicon.ico" type="image/x-icon" />
+  <link rel="icon" href="../../logo_printer/aitpn.ico" type="image/x-icon"/>
 
   <!-- Fonts and icons -->
   <script src="assets/js/plugin/webfont/webfont.min.js"></script>
@@ -104,7 +104,7 @@ $result = $conn->query($sql);
         <!-- Logo Header -->
         <div class="logo-header" data-background-color="dark">
           <a href="index.php" class="logo">
-            <img src="assets/img/kaiadmin/logo_light.svg" alt="navbar brand" class="navbar-brand" height="20" />
+            <img src="../../logo_printer/aitpn.png" alt="navbar brand" class="navbar-brand" height="190" />
           </a>
           <div class="nav-toggle">
             <button class="btn btn-toggle toggle-sidebar">
@@ -176,7 +176,7 @@ $result = $conn->query($sql);
           <!-- Logo Header -->
           <div class="logo-header" data-background-color="dark">
             <a href="index.php" class="logo">
-              <img src="assets/img/kaiadmin/logo_light.svg" alt="navbar brand" class="navbar-brand" height="20" />
+              <img src="../../logo_printer/aitpn.png" alt="navbar brand" class="navbar-brand" height="190" />
             </a>
             <div class="nav-toggle">
               <button class="btn btn-toggle toggle-sidebar">

@@ -19,7 +19,20 @@ if (!$user_id) {
     echo json_encode(['success' => false, 'message' => 'المستخدم غير مسجل الدخول']);
     exit;
 }
-
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'get_pending_jobs') {
+    header('Content-Type: application/json');
+    try {
+        $order_by = isset($_GET['order_by']) ? $_GET['order_by'] : 'id';
+        $order_dir = isset($_GET['order_dir']) && in_array(strtoupper($_GET['order_dir']), ['ASC', 'DESC']) ? strtoupper($_GET['order_dir']) : 'ASC';
+        $stmt = $dbname->prepare("SELECT * FROM print_jobs WHERE status = 'pending' ORDER BY $order_by $order_dir");
+        $stmt->execute();
+        $jobs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['success' => true, 'jobs' => $jobs]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    exit;
+}
 // دالة للحصول على إعدادات الأسعار
 function getPriceSettings($dbname) {
     try {
@@ -63,36 +76,6 @@ function getPriceSettings($dbname) {
     }
 }
 
-// دالة للحصول على نوع المستخدم والخصم المطبق
-function getUserTypeAndDiscount($dbname, $user_id) {
-    $stmt = $dbname->prepare("SELECT user_type FROM users WHERE id = :user_id");
-    $stmt->bindParam(':user_id', $user_id);
-    $stmt->execute();
-    $user = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    $settings = getPriceSettings($dbname);
-    
-    $userType = $user['user_type'] ?? 'regular';
-    $discount = 0;
-    
-    switch ($userType) {
-        case 'student':
-            $discount = $settings['student_discount'];
-            break;
-        case 'professor':
-            $discount = $settings['professor_discount'];
-            break;
-        case 'staff':
-            $discount = $settings['staff_discount'];
-            break;
-        default:
-            $discount = 0;
-            break;
-    }
-    
-    return ['user_type' => $userType, 'discount' => $discount];
-}
-
 // دالة لتنظيف اسم الملف
 function sanitizeFileName($fileName) {
     // إزالة الأحرف التي قد تكون خطرة
@@ -120,25 +103,8 @@ function calculateCost($numPages, $numCopies, $colorMode, $printSides, $dbname, 
             $pagePrice = $settings['bw_single'];
         }
     }
-
-    // الحصول على معلومات المستخدم والخصم
-    $userInfo = getUserTypeAndDiscount($dbname, $user_id);
-    $userDiscount = $userInfo['discount']; // نسبة الخصم بناءً على نوع المستخدم
-    
     // حساب التكلفة الإجمالية
     $totalCost = $numPages * $numCopies * $pagePrice;
-    
-    // تطبيق خصم كمية إذا كان عدد النسخ كبيرًا (أكثر من 50 مثلاً)
-    if ($numCopies > 50) {
-        $bulkDiscount = $settings['bulk_discount']; // خصم الكمية
-        $totalCost = $totalCost - ($totalCost * $bulkDiscount / 100);
-    }
-    
-    // تطبيق خصم المستخدم
-    if ($userDiscount > 0) {
-        $totalCost = $totalCost - ($totalCost * $userDiscount / 100);
-    }
-    
     return $totalCost;
 }
 

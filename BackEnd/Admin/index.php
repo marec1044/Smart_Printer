@@ -371,7 +371,7 @@ if (!empty($_GET['test_notification'])) {
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <title>AITP Dashboard | Print Management System</title>
   <meta content="width=device-width, initial-scale=1.0, shrink-to-fit=no" name="viewport" />
-  <link rel="icon" href="assets/img/kaiadmin/favicon.ico" type="image/x-icon" />
+  <link rel="icon" href="../../logo_printer/aitpn.ico" type="image/x-icon" />
 
   <!-- Fonts and icons -->
   <script src="assets/js/plugin/webfont/webfont.min.js"></script>
@@ -500,7 +500,7 @@ if (!empty($_GET['test_notification'])) {
         <!-- Logo Header -->
         <div class="logo-header" data-background-color="dark">
           <a href="index.php" class="logo">
-            <img src="assets/img/kaiadmin/logo_light.svg" alt="navbar brand" class="navbar-brand" height="20" />
+            <img src="../../logo_printer/aitpn.png" alt="navbar brand" class="navbar-brand" height="190" />
           </a>
           <div class="nav-toggle">
             <button class="btn btn-toggle toggle-sidebar">
@@ -572,7 +572,7 @@ if (!empty($_GET['test_notification'])) {
           <!-- Logo Header -->
           <div class="logo-header" data-background-color="dark">
             <a href="index.php" class="logo">
-              <img src="assets/img/kaiadmin/logo_light.svg" alt="navbar brand" class="navbar-brand" height="20" />
+              <img src="../../logo_printer/aitpn.png" alt="navbar brand" class="navbar-brand" height="190" />
             </a>
             <div class="nav-toggle">
               <button class="btn btn-toggle toggle-sidebar">
@@ -1066,49 +1066,6 @@ if (!empty($_GET['test_notification'])) {
                                   value="<?php echo $prices['color_double']; ?>" step="0.10">
                               </div>
                             </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="col-md-6">
-                      <div class="card card-round">
-                        <div class="card-header">
-                          <h4 class="card-title">Group Discounts</h4>
-                        </div>
-                        <div class="card-body">
-                          <div class="mb-3">
-                            <label class="form-label">Student Discount (%)</label>
-                            <div class="input-group">
-                              <input type="number" name="student_discount" class="form-control"
-                                value="<?php echo $prices['student_discount']; ?>" max="100">
-                              <span class="input-group-text">%</span>
-                            </div>
-                          </div>
-                          <div class="mb-3">
-                            <label class="form-label">Professor Discount (%)</label>
-                            <div class="input-group">
-                              <input type="number" name="professor_discount" class="form-control"
-                                value="<?php echo $prices['professor_discount']; ?>" max="100">
-                              <span class="input-group-text">%</span>
-                            </div>
-                          </div>
-                          <div class="mb-3">
-                            <label class="form-label">Administrative Staff Discount (%)</label>
-                            <div class="input-group">
-                              <input type="number" name="staff_discount" class="form-control"
-                                value="<?php echo $prices['staff_discount']; ?>" max="100">
-                              <span class="input-group-text">%</span>
-                            </div>
-                          </div>
-                          <div class="mb-3">
-                            <label class="form-label">Bulk Printing Discount (more than 50 pages)</label>
-                            <div class="input-group">
-                              <input type="number" name="bulk_discount" class="form-control"
-                                value="<?php echo $prices['bulk_discount']; ?>" max="100">
-                              <span class="input-group-text">%</span>
-                            </div>
-                          </div>
-                          </form>
                         </div>
                       </div>
                     </div>

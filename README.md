@@ -35,7 +35,7 @@
 <h5 align="center">Developed by</h5>
 
 <p align="center">
-  <img src="logo_printer/aitp logo.png" alt="AITP Logo" width="250">
+  <img src="logo_printer/aitpn.png" alt="AITP Logo" width="250">
 </p>
 
 <h3 align="center">AITP Team</h3>

@@ -24,6 +24,7 @@ $isAdmin = isset($_SESSION['user_id']) && in_array($_SESSION['user_id'], $allowe
           integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" 
           crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="user.css">
+    <link rel="stylesheet" href="../Home_page/responsive.css">
     <style>
         .btn-admin {
             background-color: #d4af37;
@@ -138,14 +139,6 @@ $isAdmin = isset($_SESSION['user_id']) && in_array($_SESSION['user_id'], $allowe
                 <label class="field-label">ID</label>  
                 <div class="field-value"><?php echo $users['id'] ?? $_SESSION['user_id']; ?></div>  
             </div>  
-            
-            <?php if($isAdmin): ?>
-            <div class="field-container">
-                <a class="btn btn-admin" href="../admin/index.php">
-                    <i class="fas fa-user-shield"></i> Access Admin Dashboard
-                </a>
-            </div>
-            <?php endif; ?>
         </div>  
 
         <div class="balance-section">  
@@ -211,5 +204,6 @@ $isAdmin = isset($_SESSION['user_id']) && in_array($_SESSION['user_id'], $allowe
         }
     });
     </script>
+    <script src="../Home_page/responsive.js"></script>
 </body>  
 </html>
