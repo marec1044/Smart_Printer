@@ -19,6 +19,191 @@ if (!$user_id) {
     echo json_encode(['success' => false, 'message' => 'المستخدم غير مسجل الدخول']);
     exit;
 }
+
+// دالة لحذف الملفات المكتملة - محسنة
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_completed_jobs') {
+    header('Content-Type: application/json');
+    try {
+        // البحث عن المهام المكتملة
+        $stmt = $dbname->prepare("SELECT id, file_path, file_name, user_id FROM print_jobs WHERE status = 'done'");
+        $stmt->execute();
+        $completed_jobs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $deleted_count = 0;
+        $user_notifications = [];
+        
+        foreach ($completed_jobs as $job) {
+            // حذف الملف من النظام إذا كان موجوداً
+            if (!empty($job['file_path']) && file_exists($job['file_path'])) {
+                if (unlink($job['file_path'])) {
+                    error_log("تم حذف الملف: " . $job['file_path']);
+                } else {
+                    error_log("فشل في حذف الملف: " . $job['file_path']);
+                }
+            } else {
+                error_log("الملف غير موجود أو المسار فارغ: " . ($job['file_path'] ?? 'مسار فارغ'));
+            }
+            
+            // حذف السجل من قاعدة البيانات
+            $delete_stmt = $dbname->prepare("DELETE FROM print_jobs WHERE id = :job_id");
+            $delete_stmt->bindParam(':job_id', $job['id']);
+            
+            if ($delete_stmt->execute()) {
+                $deleted_count++;
+                error_log("تم حذف سجل المهمة: " . $job['id']);
+                
+                // إضافة إشعار للمستخدم
+                if (!isset($user_notifications[$job['user_id']])) {
+                    $user_notifications[$job['user_id']] = [];
+                }
+                $user_notifications[$job['user_id']][] = $job['file_name'];
+            } else {
+                error_log("فشل في حذف سجل المهمة: " . $job['id']);
+            }
+        }
+        
+        // إرسال إشعارات للمستخدمين
+        foreach ($user_notifications as $user_id => $file_names) {
+            $job_count = count($file_names);
+            $notification_stmt = $dbname->prepare("INSERT INTO notifications (user_id, message, type, created_at) VALUES (:user_id, :message, 'success', NOW())");
+            
+            if ($job_count == 1) {
+                $message = "تم الانتهاء من طباعة الملف: " . $file_names[0] . " وتم حذفه من النظام.";
+            } else {
+                $message = "تم الانتهاء من طباعة {$job_count} ملفات وتم حذفها من النظام.";
+            }
+            
+            $notification_stmt->bindParam(':user_id', $user_id);
+            $notification_stmt->bindParam(':message', $message);
+            
+            if ($notification_stmt->execute()) {
+                error_log("تم إرسال إشعار للمستخدم: " . $user_id);
+            } else {
+                error_log("فشل في إرسال إشعار للمستخدم: " . $user_id);
+            }
+        }
+        
+        echo json_encode([
+            'success' => true, 
+            'deleted_count' => $deleted_count, 
+            'message' => "تم حذف {$deleted_count} مهمة مكتملة وإرسال الإشعارات"
+        ]);
+    } catch (Exception $e) {
+        error_log("خطأ في حذف المهام المكتملة: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'حدث خطأ: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+// دالة لتحديث حالة المهمة - محسنة
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_job_status') {
+    header('Content-Type: application/json');
+    try {
+        $job_id = $_POST['job_id'] ?? 0;
+        $new_status = $_POST['status'] ?? '';
+        
+        // التحقق من صحة الحالة
+        $valid_statuses = ['pending', 'in_progress', 'done', 'canceled'];
+        if (!in_array($new_status, $valid_statuses)) {
+            echo json_encode(['success' => false, 'message' => 'حالة غير صحيحة']);
+            exit;
+        }
+        
+        // الحصول على تفاصيل المهمة
+        $stmt = $dbname->prepare("SELECT * FROM print_jobs WHERE id = :job_id");
+        $stmt->bindParam(':job_id', $job_id);
+        $stmt->execute();
+        $job = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$job) {
+            echo json_encode(['success' => false, 'message' => 'المهمة غير موجودة']);
+            exit;
+        }
+        
+        // بدء معاملة قاعدة البيانات
+        $dbname->beginTransaction();
+        
+        try {
+            // تحديث حالة المهمة
+            $update_stmt = $dbname->prepare("UPDATE print_jobs SET status = :status, updated_at = NOW() WHERE id = :job_id");
+            $update_stmt->bindParam(':status', $new_status);  
+            $update_stmt->bindParam(':job_id', $job_id);
+            $update_stmt->execute();
+            
+            // إذا كانت الحالة "done" - إرسال إشعار فقط (لا نحذف الملف هنا)
+            if ($new_status === 'done') {
+                // إرسال إشعار للمستخدم
+                $notification_stmt = $dbname->prepare("INSERT INTO notifications (user_id, message, type, created_at) VALUES (:user_id, :message, 'success', NOW())");
+                $message = "تم الانتهاء من طباعة ملف: " . $job['file_name'] . ". المهمة جاهزة للاستلام.";
+                $notification_stmt->bindParam(':user_id', $job['user_id']);
+                $notification_stmt->bindParam(':message', $message);
+                $notification_stmt->execute();
+                
+                error_log("تم إرسال إشعار اكتمال الطباعة للمستخدم: " . $job['user_id'] . " للملف: " . $job['file_name']);
+            }
+            
+            // تأكيد المعاملة
+            $dbname->commit();
+            
+            echo json_encode([
+                'success' => true, 
+                'message' => 'تم تحديث حالة المهمة بنجاح',
+                'notification_sent' => ($new_status === 'done')
+            ]);
+            
+        } catch (Exception $e) {
+            // إلغاء المعاملة في حالة حدوث خطأ
+            $dbname->rollBack();
+            throw $e;
+        }
+        
+    } catch (Exception $e) {
+        error_log("خطأ في تحديث حالة المهمة: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'حدث خطأ: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+// دالة منفصلة لحذف الملفات المكتملة بعد فترة
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'cleanup_old_done_jobs') {
+    header('Content-Type: application/json');
+    try {
+        // حذف المهام المكتملة التي مضى عليها أكثر من ساعة (يمكن تعديل المدة)
+        $cleanup_time = isset($_POST['cleanup_hours']) ? intval($_POST['cleanup_hours']) : 1;
+        
+        $stmt = $dbname->prepare("SELECT id, file_path, file_name, user_id FROM print_jobs WHERE status = 'done' AND updated_at < DATE_SUB(NOW(), INTERVAL :hours HOUR)");
+        $stmt->bindParam(':hours', $cleanup_time);
+        $stmt->execute();
+        $old_jobs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $cleaned_count = 0;
+        
+        foreach ($old_jobs as $job) {
+            // حذف الملف من النظام
+            if (!empty($job['file_path']) && file_exists($job['file_path'])) {
+                unlink($job['file_path']);
+            }
+            
+            // حذف السجل من قاعدة البيانات
+            $delete_stmt = $dbname->prepare("DELETE FROM print_jobs WHERE id = :job_id");
+            $delete_stmt->bindParam(':job_id', $job['id']);
+            $delete_stmt->execute();
+            
+            $cleaned_count++;
+        }
+        
+        echo json_encode([
+            'success' => true, 
+            'cleaned_count' => $cleaned_count, 
+            'message' => "تم تنظيف {$cleaned_count} مهمة قديمة"
+        ]);
+        
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'get_pending_jobs') {
     header('Content-Type: application/json');
     try {
@@ -33,6 +218,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
     }
     exit;
 }
+
+// دالة للحصول على الإشعارات للمستخدم الحالي
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'get_notifications') {
+    header('Content-Type: application/json');
+    try {
+        $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
+        $offset = isset($_GET['offset']) ? intval($_GET['offset']) : 0;
+        
+        $stmt = $dbname->prepare("SELECT * FROM notifications WHERE user_id = :user_id ORDER BY created_at DESC LIMIT :limit OFFSET :offset");
+        $stmt->bindParam(':user_id', $user_id);
+        $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // عدد الإشعارات غير المقروءة
+        $unread_stmt = $dbname->prepare("SELECT COUNT(*) as count FROM notifications WHERE user_id = :user_id AND seen = 0");
+        $unread_stmt->bindParam(':user_id', $user_id);
+        $unread_stmt->execute();
+        $unread_count = $unread_stmt->fetch(PDO::FETCH_ASSOC)['count'];
+        
+        echo json_encode([
+            'success' => true, 
+            'notifications' => $notifications,
+            'unread_count' => $unread_count
+        ]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// دالة لتحديد الإشعارات كمقروءة
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'mark_notifications_read') {
+    header('Content-Type: application/json');
+    try {
+        $notification_ids = isset($_POST['notification_ids']) ? $_POST['notification_ids'] : [];
+        
+        if (empty($notification_ids)) {
+            // تحديد جميع الإشعارات كمقروءة
+            $stmt = $dbname->prepare("UPDATE notifications SET seen = 1 WHERE user_id = :user_id AND seen = 0");
+            $stmt->bindParam(':user_id', $user_id);
+            $stmt->execute();
+        } else {
+            // تحديد إشعارات محددة كمقروءة
+            $placeholders = str_repeat('?,', count($notification_ids) - 1) . '?';
+            $stmt = $dbname->prepare("UPDATE notifications SET seen = 1 WHERE user_id = ? AND id IN ($placeholders)");
+            $params = array_merge([$user_id], $notification_ids);
+            $stmt->execute($params);
+        }
+        
+        echo json_encode(['success' => true, 'message' => 'تم تحديث الإشعارات']);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// باقي الكود يبقى كما هو...
 // دالة للحصول على إعدادات الأسعار
 function getPriceSettings($dbname) {
     try {
@@ -89,15 +333,18 @@ function calculateCost($numPages, $numCopies, $colorMode, $printSides, $dbname, 
     // الحصول على إعدادات الأسعار من قاعدة البيانات
     $settings = getPriceSettings($dbname);
     
+    // تحويل قيم print_sides لتتناسب مع قاعدة البيانات
+    $dbPrintSides = ($printSides === 'two-sided') ? 'double' : 'single';
+    
     // تحديد سعر الصفحة بناءً على إعدادات اللون والطباعة
     if ($colorMode == 'color') {
-        if ($printSides == 'two-sided') {
+        if ($dbPrintSides == 'double') {
             $pagePrice = $settings['color_double'];
         } else {
             $pagePrice = $settings['color_single'];
         }
     } else {
-        if ($printSides == 'two-sided') {
+        if ($dbPrintSides == 'double') {
             $pagePrice = $settings['bw_double'];
         } else {
             $pagePrice = $settings['bw_single'];
@@ -133,6 +380,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $orientation = $_POST['layout'] ?? 'portrait';
     $pageOption = $_POST['pages'] ?? 'all';
     $pageRange = $_POST['page_range'] ?? '';
+    
+    // تحويل قيم print_sides لتتناسب مع قاعدة البيانات
+    $dbPrintSides = ($printSides === 'two-sided') ? 'double' : 'single';
     
     // التحقق من وجود الملف
     if (!file_exists($tempFilePath)) {
@@ -185,11 +435,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // بدء معاملة قاعدة البيانات
         $dbname->beginTransaction();
         
-        // إنشاء مهمة طباعة
+        // إنشاء مهمة طباعة بحالة pending
         $stmt = $dbname->prepare("INSERT INTO print_jobs (user_id, file_name, file_path, num_pages, num_copies, 
                                 color_mode, print_sides, orientation, page_range, cost, status, created_at) 
                                 VALUES (:user_id, :file_name, :file_path, :num_pages, :num_copies, 
-                                :color_mode, :print_sides, :orientation, :page_range, :cost, 'confirmed', NOW())");
+                                :color_mode, :print_sides, :orientation, :page_range, :cost, 'pending', NOW())");
 
         $stmt->bindParam(':user_id', $user_id);
         $stmt->bindParam(':file_name', $originalFileName);
@@ -197,7 +447,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $stmt->bindParam(':num_pages', $numPages);
         $stmt->bindParam(':num_copies', $numCopies);
         $stmt->bindParam(':color_mode', $colorMode);
-        $stmt->bindParam(':print_sides', $printSides);
+        $stmt->bindParam(':print_sides', $dbPrintSides); // استخدام القيمة المحولة
         $stmt->bindParam(':orientation', $orientation);
         $stmt->bindParam(':page_range', $pageRange);
         $stmt->bindParam(':cost', $cost);
@@ -230,7 +480,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         header('Content-Type: application/json');
         echo json_encode([
             'success' => true, 
-            'message' => 'تمت معالجة مهمة الطباعة بنجاح',
+            'message' => 'تمت معالجة مهمة الطباعة بنجاح وهي في انتظار المعالجة',
             'job_id' => $job_id,
             'cost' => $cost,
             'remaining_balance' => $new_balance
@@ -282,7 +532,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
     $allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
                      'image/jpeg', 'image/jpg', 'image/png'];
     
-    if (!in_array($file['type'], $allowedTypes)) {
+   if (!in_array($file['type'], $allowedTypes)) {
         header('Content-Type: application/json');
         echo json_encode(['success' => false, 'message' => 'نوع ملف غير صالح. الأنواع المسموح بها: PDF، DOC، DOCX، JPG، PNG']);
         exit;
@@ -338,10 +588,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $orientation = $data['orientation'];
                 $page_range = isset($data['page_range']) ? $data['page_range'] : 'all';
                 
+                // تحويل قيم print_sides لتتناسب مع قاعدة البيانات
+                $dbPrintSides = ($print_sides === 'two-sided') ? 'double' : 'single';
+                
                 // حساب التكلفة باستخدام الأسعار من قاعدة البيانات
                 $cost = calculateCost($num_pages, $num_copies, $color_mode, $print_sides, $dbname, $user_id);
                 
-                // إدخال مهمة الطباعة في قاعدة البيانات
+                // إدخال مهمة الطباعة في قاعدة البيانات بحالة pending
                 $stmt = $dbname->prepare("INSERT INTO print_jobs (user_id, file_name, file_path, num_pages, num_copies, 
                                         color_mode, print_sides, orientation, page_range, cost, status, created_at) 
                                         VALUES (:user_id, :file_name, :file_path, :num_pages, :num_copies, 
@@ -353,7 +606,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->bindParam(':num_pages', $num_pages);
                 $stmt->bindParam(':num_copies', $num_copies);
                 $stmt->bindParam(':color_mode', $color_mode);
-                $stmt->bindParam(':print_sides', $print_sides);
+                $stmt->bindParam(':print_sides', $dbPrintSides); // استخدام القيمة المحولة
                 $stmt->bindParam(':orientation', $orientation);
                 $stmt->bindParam(':page_range', $page_range);
                 $stmt->bindParam(':cost', $cost);
@@ -382,8 +635,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
     if (isset($data['job_id'])) {
         $job_id = $data['job_id'];
         
-        // تحديث حالة مهمة الطباعة إلى "مؤكدة"
-        $stmt = $dbname->prepare("UPDATE print_jobs SET status = 'confirmed', confirmed_at = NOW() WHERE id = :job_id AND user_id = :user_id");
+        // تحديث حالة مهمة الطباعة إلى "in_progress"
+        $stmt = $dbname->prepare("UPDATE print_jobs SET status = 'in_progress', updated_at = NOW() WHERE id = :job_id AND user_id = :user_id");
         $stmt->bindParam(':job_id', $job_id);
         $stmt->bindParam(':user_id', $user_id);
         
@@ -418,7 +671,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['job_id'])) {
 // جلب إعدادات الأسعار الحالية (مفيد للواجهة الأمامية)
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['get_price_settings'])) {
     $settings = getPriceSettings($dbname);
-    $userInfo = getUserTypeAndDiscount($dbname, $user_id);
+    
+    // الحصول على معلومات المستخدم
+    $stmt = $dbname->prepare("SELECT name, email, balance FROM users WHERE id = :user_id");
+    $stmt->bindParam(':user_id', $user_id);
+    $stmt->execute();
+    $userInfo = $stmt->fetch(PDO::FETCH_ASSOC);
     
     echo json_encode([
         'success' => true, 
@@ -429,9 +687,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['get_price_settings'])) 
 }
 
 // في أي حالة أخرى، إعادة خطأ
-if (!isset($json_response)) {
-    header('Content-Type: application/json');
-    echo json_encode(['success' => false, 'message' => 'طلب غير صالح']);
-    exit;
-}
+header('Content-Type: application/json');
+echo json_encode(['success' => false, 'message' => 'طلب غير صالح']);
+exit;
 ?>

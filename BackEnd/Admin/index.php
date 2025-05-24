@@ -276,10 +276,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['save_prices'])) {
   $color_single = $_POST['color_single'];
   $bw_double = $_POST['bw_double'];
   $color_double = $_POST['color_double'];
-  $student_discount = $_POST['student_discount'];
-  $professor_discount = $_POST['professor_discount'];
-  $staff_discount = $_POST['staff_discount'];
-  $bulk_discount = $_POST['bulk_discount'];
 
   $sql = "UPDATE price_settings SET 
             bw_single = ?, 
